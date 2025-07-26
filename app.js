@@ -1,89 +1,317 @@
-// Import modules
-import { initDebtSystem } from './quantum-debt.js';
-import { startProphecyEngine } from './prophecy-engine.js';
-import { initGlobalEvents } from './global-events.js';
-import './glitch-material.js';
+// ================ QUANTUM REALITY - CORE ENGINE ================ //
+// Version 1.0 | Designed for cross-platform WebXR AR experiences
+// Dependencies: A-Frame, PeerJS, GunDB, Three.js
 
-// Game state
-let playerRole = 0; // 0=Dreamer, 1=Collapser
-const peerId = `player_${Math.floor(Math.random() * 10000)}`;
+// --------------------- GLOBAL STATE --------------------- //
+let playerRole = 0; // 0 = Dreamer, 1 = Collapser
+const playerId = `player_${Math.floor(Math.random() * 10000)}_${Date.now()}`;
 let gunDB;
+let arSessionActive = false;
+let lastCreationTime = 0;
+const creationCooldown = 2000; // 2 seconds between creations
 
-// Initialize game systems
-function initGame() {
-  // Setup networking
-  gunDB = Gun(['https://gun-manhattan.herokuapp.com/gun']);
-  const peer = new Peer(peerId, { host: '0.peerjs.com', port: 443 });
-  
-  // Initialize modules
-  initDebtSystem();
-  startProphecyEngine();
-  initGlobalEvents(gunDB);
-  
-  // Device setup
-  if (window.DeviceOrientationEvent) {
-    setupDreamerControls();
-  }
-  
-  // Role switching
-  document.addEventListener('dblclick', () => {
-    playerRole = playerRole === 0 ? 1 : 0;
-    document.querySelector('#role span').textContent = 
-      playerRole === 0 ? 'DREAMER' : 'COLLAPSER';
-  });
+// DOM References
+const roleDisplay = document.querySelector('#role span');
+const debtDisplay = document.querySelector('#debt span');
+const prophecyDisplay = document.querySelector('#prophecy span');
+const scene = document.querySelector('a-scene');
+
+// --------------------- INITIALIZATION --------------------- //
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize game systems
+    initNetwork();
+    initARSystem();
+    initDebtSystem();
+    initProphecySystem();
+    initRoleControls();
+    
+    // Display first prophecy
+    prophecyDisplay.textContent = getRandomProphecy();
+});
+
+// --------------------- NETWORK SYSTEM --------------------- //
+function initNetwork() {
+    try {
+        // Initialize decentralized database
+        gunDB = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+        
+        // Initialize P2P connections
+        const peer = new Peer(playerId, {
+            host: '0.peerjs.com',
+            port: 443,
+            debug: 0
+        });
+        
+        // Listen for remote objects
+        gunDB.get('objects').map().on((data, id) => {
+            if (data && data.creator !== playerId) {
+                createRemoteObject(data);
+            }
+        });
+        
+        // Listen for global events
+        gunDB.get('events').on((data) => {
+            if (data) handleGlobalEvent(data);
+        });
+        
+        console.log("Network initialized");
+    } catch (error) {
+        console.error("Network init failed:", error);
+        prophecyDisplay.textContent = "NETWORK ERROR - TRY REFRESHING";
+    }
 }
 
-// Dreamer creation mechanics
-function setupDreamerControls() {
-  window.addEventListener('deviceorientation', (e) => {
-    if (playerRole !== 0) return;
+// --------------------- AR SYSTEM --------------------- //
+function initARSystem() {
+    // Check WebXR support
+    if (!navigator.xr) {
+        prophecyDisplay.textContent = "WEBXR NOT SUPPORTED - USE CHROME ON ANDROID/iOS";
+        return;
+    }
+
+    // Request AR session when scene is ready
+    scene.addEventListener('loaded', async () => {
+        try {
+            const session = await navigator.xr.requestSession('immersive-ar');
+            arSessionActive = true;
+            console.log("AR session started");
+            
+            // Set up rendering
+            session.updateRenderState({
+                baseLayer: new XRWebGLLayer(session, scene.renderer)
+            });
+            
+            // Start AR loop
+            session.requestAnimationFrame(onARFrame);
+            
+            // Initialize controls based on role
+            if (playerRole === 0) initDreamerControls();
+            else initCollapserControls();
+            
+        } catch (error) {
+            console.error("AR failed to start:", error);
+            prophecyDisplay.textContent = "AR ERROR: " + error.message;
+        }
+    });
+}
+
+function onARFrame(time, frame) {
+    if (!arSessionActive) return;
     
-    const x = (e.gamma / 90) * 2;
-    const y = (e.beta / 180) * 4;
+    const session = frame.session;
+    const pose = frame.getViewerPose(scene.renderer.xr.getReferenceSpace());
     
+    if (pose) {
+        // Update camera position (essential for AR tracking)
+        const position = pose.transform.position;
+        scene.camera.object3D.position.set(position.x, position.y, position.z);
+    }
+    
+    // Continue AR loop
+    session.requestAnimationFrame(onARFrame);
+}
+
+// --------------------- GAMEPLAY SYSTEMS --------------------- //
+
+// DREAMER CONTROLS
+function initDreamerControls() {
+    window.addEventListener('deviceorientation', handleDeviceTilt);
+    console.log("Dreamer controls activated");
+}
+
+function handleDeviceTilt(event) {
+    if (playerRole !== 0 || !arSessionActive) return;
+    if (Date.now() - lastCreationTime < creationCooldown) return;
+    
+    // Calculate position based on tilt (-2 to 2 range)
+    const x = (event.gamma / 90) * 2; 
+    const y = (event.beta / 180) * 4;
+    
+    createObject(x, y, -2);
+    lastCreationTime = Date.now();
+}
+
+// COLLAPSER CONTROLS
+function initCollapserControls() {
+    scene.addEventListener('click', handleObjectInteraction);
+    console.log("Collapser controls activated");
+}
+
+function handleObjectInteraction(event) {
+    if (playerRole !== 1 || !arSessionActive) return;
+    
+    const target = event.detail.intersection.object;
+    if (target.classList.contains('quantum-object')) {
+        // 50% chance to freeze or shatter
+        const action = Math.random() > 0.5 ? 'freeze' : 'shatter';
+        
+        if (action === 'freeze') {
+            target.setAttribute('material', 'color: #666; metalness: 0.8');
+            gunDB.get('events').put({ 
+                type: 'freeze', 
+                id: target.id,
+                creator: playerId
+            });
+        } else {
+            target.parentNode.removeChild(target);
+            gunDB.get('events').put({ 
+                type: 'shatter', 
+                id: target.id,
+                creator: playerId
+            });
+        }
+        
+        // Apply quantum debt penalty
+        updateQuantumDebt(-5);
+    }
+}
+
+// OBJECT MANAGEMENT
+function createObject(x, y, z) {
     const entity = document.createElement('a-entity');
-    entity.setAttribute('position', `${x} ${y} -2`);
+    entity.setAttribute('position', `${x} ${y} ${z}`);
     entity.setAttribute('glitch-material', '');
-    document.querySelector('a-scene').appendChild(entity);
+    entity.classList.add('quantum-object');
+    entity.id = `obj_${playerId}_${Date.now()}`;
+    scene.appendChild(entity);
     
     // Sync to network
     gunDB.get('objects').put({
-      id: Date.now(),
-      type: 'dream',
-      position: { x, y, z: -2 },
-      creator: peerId
+        id: entity.id,
+        type: 'dream',
+        position: { x, y, z },
+        creator: playerId,
+        timestamp: Date.now()
     });
-  });
 }
 
-// Collapser interaction
-document.querySelector('a-scene').addEventListener('click', (e) => {
-  if (playerRole !== 1) return;
-  
-  const target = e.detail.intersection.object;
-  if (target.hasAttribute('glitch-material')) {
-    if (Math.random() > 0.5) {
-      target.setAttribute('material', 'color: #666');
-      gunDB.get('events').put({ type: 'freeze', target: target.id });
-    } else {
-      target.parentNode.removeChild(target);
-      gunDB.get('events').put({ type: 'shatter', target: target.id });
-    }
+function createRemoteObject(data) {
+    if (document.getElementById(data.id)) return; // Prevent duplicates
     
-    // Apply debt penalty
-    window.updateQuantumDebt(-5);
-  }
-});
-
-// Network sync
-gunDB.get('objects').map().on((data) => {
-  if (data && data.creator !== peerId) {
     const entity = document.createElement('a-entity');
     entity.setAttribute('position', `${data.position.x} ${data.position.y} ${data.position.z}`);
     entity.setAttribute('glitch-material', '');
-    document.querySelector('a-scene').appendChild(entity);
-  }
+    entity.classList.add('quantum-object');
+    entity.id = data.id;
+    scene.appendChild(entity);
+}
+
+// QUANTUM DEBT SYSTEM
+function initDebtSystem() {
+    let debt = parseInt(localStorage.getItem('quantumDebt') || 100);
+    debtDisplay.textContent = `${debt}%`;
+    
+    // Continuous debt drain for Collapsers
+    setInterval(() => {
+        if (playerRole === 1) {
+            updateQuantumDebt(-0.1);
+        }
+    }, 60000);
+}
+
+function updateQuantumDebt(change) {
+    let debt = parseInt(localStorage.getItem('quantumDebt') || 100);
+    debt = Math.max(0, Math.min(100, debt + change));
+    
+    localStorage.setItem('quantumDebt', debt);
+    debtDisplay.textContent = `${debt}%`;
+    
+    // Visual effect - reduce opacity as debt increases
+    scene.setAttribute('material', 'opacity', debt/100);
+}
+
+// PROPHECY SYSTEM
+function initProphecySystem() {
+    const prophecies = [
+        "Build bridges where shadows weep",
+        "Drown sorrows in dry riverbeds",
+        "Plant fire in frozen gardens",
+        "Bury light beneath stone giants"
+    ];
+    
+    // Update prophecy every 3 minutes
+    setInterval(() => {
+        prophecyDisplay.textContent = prophecies[Math.floor(Math.random() * prophecies.length)];
+    }, 180000);
+}
+
+function getRandomProphecy() {
+    const prophecies = [
+        "Create water where shadows sleep",
+        "Build towers of light in dark places",
+        "Shatter silence with color",
+        "Freeze time where memories linger"
+    ];
+    return prophecies[Math.floor(Math.random() * prophecies.length)];
+}
+
+// GLOBAL EVENTS HANDLER
+function handleGlobalEvent(data) {
+    switch(data.type) {
+        case 'freeze':
+            const obj = document.getElementById(data.id);
+            if (obj) obj.setAttribute('material', 'color: #666; metalness: 0.8');
+            break;
+            
+        case 'shatter':
+            const target = document.getElementById(data.id);
+            if (target) target.parentNode.removeChild(target);
+            break;
+            
+        case 'reality-shatter':
+            document.querySelectorAll('.quantum-object').forEach(obj => {
+                obj.setAttribute('animation', 'property: scale; to: 0 0 0; dur: 2000');
+                setTimeout(() => obj.parentNode.removeChild(obj), 2000);
+            });
+            break;
+    }
+}
+
+// ROLE MANAGEMENT
+function initRoleControls() {
+    // Double-tap to switch roles
+    let lastTap = 0;
+    scene.addEventListener('touchstart', (event) => {
+        const now = Date.now();
+        if (now - lastTap < 300) { // Double-tap detected
+            switchRole();
+        }
+        lastTap = now;
+    });
+    
+    // Double-click for desktop
+    scene.addEventListener('dblclick', switchRole);
+}
+
+function switchRole() {
+    playerRole = playerRole === 0 ? 1 : 0;
+    roleDisplay.textContent = playerRole === 0 ? 'DREAMER' : 'COLLAPSER';
+    
+    // Reinitialize controls
+    if (playerRole === 0) initDreamerControls();
+    else initCollapserControls();
+    
+    // Show notification
+    const notification = document.createElement('a-text');
+    notification.setAttribute('value', `ROLE CHANGED TO ${roleDisplay.textContent}`);
+    notification.setAttribute('position', '0 0.5 -1');
+    notification.setAttribute('color', '#FF00FF');
+    scene.appendChild(notification);
+    setTimeout(() => scene.removeChild(notification), 3000);
+}
+
+// --------------------- UTILITY FUNCTIONS --------------------- //
+function getDeviceType() {
+    const ua = navigator.userAgent;
+    if (/Mobile|Android|iP(hone|od|ad)/.test(ua)) return 'mobile';
+    if (/Tablet|iPad/.test(ua)) return 'tablet';
+    return 'desktop';
+}
+
+// --------------------- ERROR HANDLING --------------------- //
+window.addEventListener('error', (event) => {
+    console.error("Unhandled error:", event.error);
+    prophecyDisplay.textContent = "SYSTEM ERROR - REFRESH GAME";
 });
 
-// Start game when ready
-window.addEventListener('DOMContentLoaded', initGame);
+// ==================== END OF CORE ENGINE ==================== //
