@@ -1,53 +1,129 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>Quantum Reality</title>
-    <link rel="stylesheet" href="style.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <script>
-        if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-            document.querySelector('a-scene').setAttribute('arjs', 'sourceType: webcam;');
-        }
-    </script>
-    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <title>Quantum Reality AR</title>
+    
+    <!-- WebXR Polyfill for iOS -->
+    <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/dist/webxr-polyfill.min.js"></script>
+    
+    <!-- A-Frame with XR compatibility -->
+    <script src="https://cdn.jsdelivr.net/gh/aframevr/aframe@v1.3.0/dist/aframe-master.min.js"></script>
+    
+    <!-- Game Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-    <script type="module" src="app.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0ff;
+        }
+        
+        #ar-permission {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        #start-ar {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #ff00ff;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            margin: 20px 0;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        #support-warning {
+            color: #ff5555;
+            max-width: 80%;
+            margin-top: 20px;
+        }
+        
+        #hud {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border: 1px solid #f0f;
+            border-radius: 8px;
+            z-index: 1000;
+            font-size: 14px;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
 </head>
-
 <body>
-    <div id="ar-permission"
-        style="position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.8); color: white; text-align: center; padding: 20px; z-index: 10000;">
-        <h2>QUANTUM REALITY AWAITS</h2>
-        <p>Click below to activate AR and begin altering reality</p>
-        <button id="start-ar"
-            style="padding: 15px 30px; font-size: 18px; background: #ff00ff; border: none; cursor: pointer;">
-            ACTIVATE AR
-        </button>
+    <!-- AR Permission Screen -->
+    <div id="ar-permission">
+        <h2>QUANTUM REALITY</h2>
+        <p>Enter an augmented world where your actions alter reality</p>
+        <button id="start-ar">ACTIVATE AR</button>
+        <p id="support-warning"></p>
+        <p><small>Requires Chrome on Android or Safari on iOS 15+</small></p>
     </div>
-    <!--  AR SCENE SETUP -->
-    <a-scene vr-mode-ui="enabled: false" xr-mode-ui="enabled: false"
-        renderer="antialias: true; logarithmicDepthBuffer: true;">
-        <!-- REQUIRED CAMERA SETUP -->
-        <a-camera id="ar-cam" position="0 0 0" rotation="0 0 0" wasd-controls="enabled: false"
-            look-controls="enabled: false"></a-camera>
+
+    <!-- AR Scene -->
+    <a-scene 
+        vr-mode-ui="enabled: false"
+        xr-mode-ui="enabled: false"
+        renderer="colorManagement: true; precision: mediump; xrCompatible: true;"
+        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
+    >
+        <a-camera 
+            id="ar-cam" 
+            position="0 0 0" 
+            rotation="0 0 0"
+            wasd-controls="enabled: false"
+            look-controls="enabled: false"
+        ></a-camera>
+        
+        <!-- Loading Indicator -->
+        <a-entity position="0 0 -1">
+            <a-text 
+                id="loading-text"
+                value="Initializing quantum field..."
+                align="center"
+                color="#FF00FF"
+                position="0 0.2 0"
+            ></a-text>
+        </a-entity>
     </a-scene>
 
-    <!-- DYNAMIC CONTENT WILL APPEAR HERE -->
-    </a-scene>
-
-    <div id="hud">
-        <div id="role">ROLE: <span>DREAMER</span></div>
-        <div id="debt">QUANTUM DEBT: <span>100%</span></div>
-        <div id="prophecy">PROPHECY: <span>Loading...</span></div>
+    <!-- Game HUD -->
+    <div id="hud" class="hidden">
+        <div>ROLE: <span id="role-display">DREAMER</span></div>
+        <div>QUANTUM DEBT: <span id="debt-display">100%</span></div>
+        <div>PROPHECY: <span id="prophecy-display">Create water where shadows sleep</span></div>
     </div>
+
+    <!-- Main Game Script -->
+    <script type="module" src="app.js"></script>
 </body>
-
 </html>
