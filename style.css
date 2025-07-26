@@ -1,0 +1,26 @@
+body { 
+  margin: 0; 
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+}
+
+#hud {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(0,0,0,0.7);
+  color: #0ff; /* Cyber blue */
+  padding: 15px;
+  border: 1px solid #f0f;
+  border-radius: 8px;
+  z-index: 10000;
+}
+
+#hud div {
+  margin: 5px 0;
+}
+
+#hud span {
+  color: #ff0; /* Warning yellow */
+  font-weight: bold;
+}

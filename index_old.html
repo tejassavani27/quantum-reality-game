@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Quantum Reality</title>
+  <!-- FREE DEPENDENCIES -->
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #infoPanel {
+      position: absolute; 
+      bottom: 20px; left: 20px;
+      background: rgba(0,0,0,0.7); 
+      color: white; 
+      padding: 10px;
+      z-index: 10000;
+    }
+  </style>
+</head>
+<body>
+  <!-- AR SCENE -->
+  <a-scene 
+    vr-mode-ui="enabled: false"
+    arjs="sourceType: webcam; debugUIEnabled: false"
+    renderer="logarithmicDepthBuffer: true"
+  >
+    <!-- DYNAMIC ENTITIES WILL APPEAR HERE -->
+  </a-scene>
+
+  <!-- ROLE PANEL -->
+  <div id="infoPanel">
+    <h3 id="roleText">DREAMER</h3>
+    <p>Tilt device to create</p>
+    <button id="switchRole">BECOME COLLAPSER</button>
+  </div>
+
+  <script>
+    // ===== CORE CONFIG ===== //
+    const ROLE_DREAMER = 0;
+    const ROLE_COLLAPSER = 1;
+    let playerRole = ROLE_DREAMER;
+    let peerId = 'player_' + Math.floor(Math.random() * 10000);
+    let gunDB;
+
+    // ===== INITIALIZE NETWORK ===== //
+    function initNetwork() {
+      // Connect to free decentralized DB
+      gunDB = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+      
+      // Create P2P connection
+      const peer = new Peer(peerId, { 
+        host: '0.peerjs.com', 
+        port: 443, 
+        path: '/',
+        debug: 3 
+      });
+
+      // Share new objects with nearby players
+      window.shareObject = (data) => {
+        gunDB.get('world').get('objects').set(data);
+      };
+
+      // Listen for remote objects
+      gunDB.get('world').get('objects').map().on((data, id) => {
+        if (data && data.creator !== peerId) {
+          createRemoteObject(data);
+        }
+      });
+    }
+
+    // ===== AR OBJECT CREATION (DREAMER) ===== //
+    function initDreamer() {
+      // Use device tilt to create objects
+      window.addEventListener('deviceorientation', (e) => {
+        if (playerRole !== ROLE_DREAMER) return;
+        
+        // Calculate position based on tilt
+        const x = (e.gamma / 90) * 2; // -2 to 2 range
+        const y = (e.beta / 180) * 4; // -4 to 4 range
+        
+        // Create glitch object
+        const entity = document.createElement('a-entity');
+        entity.setAttribute('position', `${x} ${y} -2`);
+        entity.setAttribute('glitch-material', '');
+        entity.setAttribute('class', 'dreamObject');
+        
+        // Add to scene
+        document.querySelector('a-scene').appendChild(entity);
+        
+        // Share with network
+        shareObject({
+          type: 'dream',
+          position: { x, y, z: -2 },
+          creator: peerId
+        });
+      });
+    }
+
+    // ===== OBJECT INTERACTION (COLLAPSER) ===== //
+    function initCollapser() {
+      const scene = document.querySelector('a-scene');
+      
+      // Tap to freeze/shatter
+      scene.addEventListener('click', (e) => {
+        if (playerRole !== ROLE_COLLAPSER) return;
+        
+        const target = e.detail.intersection.object;
+        if (target.classList.contains('dreamObject')) {
+          // 50% chance to freeze or shatter
+          if (Math.random() > 0.5) {
+            // FREEZE: Turn gray
+            target.setAttribute('material', 'color: #666');
+            shareObject({
+              type: 'freeze',
+              id: target.id,
+              creator: peerId
+            });
+          } else {
+            // SHATTER: Remove object
+            target.parentNode.removeChild(target);
+            shareObject({
+              type: 'shatter',
+              id: target.id,
+              creator: peerId
+            });
+          }
+          
+          // Penalty: Reduce local storage
+          localStorage.setItem('quantumStorage', 
+            parseInt(localStorage.quantumStorage || 100) - 5
+          );
+        }
+      });
+    }
+
+    // ===== GLITCH MATERIAL (SENSOR-BASED) ===== //
+    AFRAME.registerComponent('glitch-material', {
+      init: function() {
+        // Generate unique ID
+        this.el.id = 'obj_' + Date.now();
+        
+        // Create dynamic material
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(Math.random(), Math.random(), Math.random()),
+          transparent: true,
+          opacity: 0.7
+        });
+        
+        // Add geometry (sphere for dreams)
+        this.el.setAttribute('geometry', 'primitive: sphere; radius: 0.2');
+        this.el.setAttribute('material', material);
+        
+        // Weather-based animation
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            // Simulated weather based on latitude
+            const isCold = pos.coords.latitude > 40;
+            if (isCold) {
+              this.el.setAttribute('animation', 'property: rotation; to: 0 360 0; loop: true; dur: 5000');
+            } else {
+              this.el.setAttribute('animation', 'property: position; dir: alternate; dur: 2000; to: 0 0.5 0');
+            }
+          });
+        }
+      }
+    });
+
+    // ===== REMOTE OBJECT SYNC ===== //
+    function createRemoteObject(data) {
+      const entity = document.createElement('a-entity');
+      entity.setAttribute('position', `${data.position.x} ${data.position.y} ${data.position.z}`);
+      
+      if (data.type === 'dream') {
+        entity.setAttribute('glitch-material', '');
+      } else if (data.type === 'freeze') {
+        entity.setAttribute('material', 'color: #666');
+      }
+      
+      entity.classList.add('dreamObject');
+      document.querySelector('a-scene').appendChild(entity);
+    }
+
+    // ===== ROLE SWITCHING ===== //
+    document.getElementById('switchRole').addEventListener('click', () => {
+      playerRole = playerRole === ROLE_DREAMER ? ROLE_COLLAPSER : ROLE_DREAMER;
+      document.getElementById('roleText').innerText = 
+        playerRole === ROLE_DREAMER ? 'DREAMER' : 'COLLAPSER';
+    });
+
+    // ===== START GAME ===== //
+    window.addEventListener('load', () => {
+      initNetwork();
+      initDreamer();
+      initCollapser();
+      
+      // First prophecy
+      setTimeout(() => {
+        alert('QUANTUM PROPHECY: Create water where shadows sleep');
+      }, 3000);
+    });
+  </script>
+</body>
+</html>
