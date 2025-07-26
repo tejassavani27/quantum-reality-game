@@ -23,20 +23,24 @@
 </head>
 
 <body>
-    <!-- CORRECTED AR SCENE SETUP -->
-    <a-scene vr-mode-ui="enabled: false"
-        arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3;"
-        renderer="logarithmicDepthBuffer: true; antialias: true;" xr-mode-ui="enabled: false">
-        <!-- REQUIRED AR COMPONENTS -->
-        <a-camera gps-camera rotation-reader></a-camera>
+    <div id="ar-permission"
+        style="position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.8); color: white; text-align: center; padding: 20px; z-index: 10000;">
+        <h2>QUANTUM REALITY AWAITS</h2>
+        <p>Click below to activate AR and begin altering reality</p>
+        <button id="start-ar"
+            style="padding: 15px 30px; font-size: 18px; background: #ff00ff; border: none; cursor: pointer;">
+            ACTIVATE AR
+        </button>
+    </div>
+    <!--  AR SCENE SETUP -->
+    <a-scene vr-mode-ui="enabled: false" xr-mode-ui="enabled: false"
+        renderer="antialias: true; logarithmicDepthBuffer: true;">
+        <!-- REQUIRED CAMERA SETUP -->
+        <a-camera id="ar-cam" position="0 0 0" rotation="0 0 0" wasd-controls="enabled: false"
+            look-controls="enabled: false"></a-camera>
+    </a-scene>
 
-        <!-- OPTIONAL: AR LOADING INDICATOR -->
-        <a-entity position="0 0 -1">
-            <a-text id="ar-loading" value="Initializing AR..." align="center" color="#FF00FF" position="0 0.2 0"
-                visible="true"></a-text>
-        </a-entity>
-
-        <!-- DYNAMIC CONTENT WILL APPEAR HERE -->
+    <!-- DYNAMIC CONTENT WILL APPEAR HERE -->
     </a-scene>
 
     <div id="hud">

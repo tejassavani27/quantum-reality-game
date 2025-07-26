@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDebtSystem();
     initProphecySystem();
     initRoleControls();
-    
+
     // Display first prophecy
     prophecyDisplay.textContent = getRandomProphecy();
 });
@@ -34,26 +34,26 @@ function initNetwork() {
     try {
         // Initialize decentralized database
         gunDB = Gun(['https://gun-manhattan.herokuapp.com/gun']);
-        
+
         // Initialize P2P connections
         const peer = new Peer(playerId, {
             host: '0.peerjs.com',
             port: 443,
             debug: 0
         });
-        
+
         // Listen for remote objects
         gunDB.get('objects').map().on((data, id) => {
             if (data && data.creator !== playerId) {
                 createRemoteObject(data);
             }
         });
-        
+
         // Listen for global events
         gunDB.get('events').on((data) => {
             if (data) handleGlobalEvent(data);
         });
-        
+
         console.log("Network initialized");
     } catch (error) {
         console.error("Network init failed:", error);
@@ -61,55 +61,103 @@ function initNetwork() {
     }
 }
 
-// --------------------- AR SYSTEM --------------------- //
+// ===================== AR SYSTEM (FIXED) ===================== //
+let arPermissionGranted = false;
+
 function initARSystem() {
-    // Check WebXR support
+    // Hide permission UI if WebXR not supported
     if (!navigator.xr) {
-        prophecyDisplay.textContent = "WEBXR NOT SUPPORTED - USE CHROME ON ANDROID/iOS";
+        document.getElementById('ar-permission').style.display = 'none';
         return;
     }
 
-    // Request AR session when scene is ready
-    scene.addEventListener('loaded', async () => {
+    // Show permission UI
+    document.getElementById('start-ar').addEventListener('click', async () => {
         try {
-            const session = await navigator.xr.requestSession('immersive-ar');
-            arSessionActive = true;
-            console.log("AR session started");
-            
-            // Set up rendering
-            session.updateRenderState({
-                baseLayer: new XRWebGLLayer(session, scene.renderer)
-            });
-            
-            // Start AR loop
-            session.requestAnimationFrame(onARFrame);
-            
-            // Initialize controls based on role
-            if (playerRole === 0) initDreamerControls();
-            else initCollapserControls();
-            
+            await startARSession();
+            document.getElementById('ar-permission').style.display = 'none';
         } catch (error) {
             console.error("AR failed to start:", error);
-            prophecyDisplay.textContent = "AR ERROR: " + error.message;
+            document.querySelector('#prophecy span').textContent = "AR ERROR: " + error.message;
         }
+    });
+}
+
+async function startARSession() {
+
+    // Request AR session
+    const session = await navigator.xr.requestSession('immersive-ar');
+    arSessionActive = true;
+    console.log("AR session started");
+
+    // Mobile-specific optimizations
+    if (isMobile()) {
+        // Force landscape orientation
+        screen.orientation.lock('landscape').catch(() => { });
+
+        // Prevent accidental scrolling
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+    }
+
+    function isMobile() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    // Initialize scene
+    scene.setAttribute('loaded', true);
+
+    // Set up rendering
+    const gl = scene.renderer.getContext();
+    session.updateRenderState({
+        baseLayer: new XRWebGLLayer(session, gl)
+    });
+
+    // Set reference space
+    const refSpace = await session.requestReferenceSpace('local');
+    scene.renderer.xr.setReferenceSpace(refSpace);
+
+    // Start AR loop
+    session.requestAnimationFrame(onARFrame);
+
+    // Initialize controls
+    if (playerRole === 0) initDreamerControls();
+    else initCollapserControls();
+
+    // Handle session end
+    session.addEventListener('end', () => {
+        arSessionActive = false;
+        document.getElementById('ar-permission').style.display = 'block';
+        document.querySelector('#prophecy span').textContent = "AR session ended";
     });
 }
 
 function onARFrame(time, frame) {
     if (!arSessionActive) return;
-    
+
     const session = frame.session;
-    const pose = frame.getViewerPose(scene.renderer.xr.getReferenceSpace());
-    
+    const refSpace = scene.renderer.xr.getReferenceSpace();
+    const pose = frame.getViewerPose(refSpace);
+
     if (pose) {
-        // Update camera position (essential for AR tracking)
+        // Update camera position
         const position = pose.transform.position;
         scene.camera.object3D.position.set(position.x, position.y, position.z);
+
+        // Optional: Update camera rotation
+        const orientation = pose.transform.orientation;
+        scene.camera.object3D.quaternion.set(
+            orientation.x,
+            orientation.y,
+            orientation.z,
+            orientation.w
+        );
     }
-    
+
     // Continue AR loop
     session.requestAnimationFrame(onARFrame);
 }
+
 
 // --------------------- GAMEPLAY SYSTEMS --------------------- //
 
@@ -122,11 +170,11 @@ function initDreamerControls() {
 function handleDeviceTilt(event) {
     if (playerRole !== 0 || !arSessionActive) return;
     if (Date.now() - lastCreationTime < creationCooldown) return;
-    
+
     // Calculate position based on tilt (-2 to 2 range)
-    const x = (event.gamma / 90) * 2; 
+    const x = (event.gamma / 90) * 2;
     const y = (event.beta / 180) * 4;
-    
+
     createObject(x, y, -2);
     lastCreationTime = Date.now();
 }
@@ -139,28 +187,28 @@ function initCollapserControls() {
 
 function handleObjectInteraction(event) {
     if (playerRole !== 1 || !arSessionActive) return;
-    
+
     const target = event.detail.intersection.object;
     if (target.classList.contains('quantum-object')) {
         // 50% chance to freeze or shatter
         const action = Math.random() > 0.5 ? 'freeze' : 'shatter';
-        
+
         if (action === 'freeze') {
             target.setAttribute('material', 'color: #666; metalness: 0.8');
-            gunDB.get('events').put({ 
-                type: 'freeze', 
+            gunDB.get('events').put({
+                type: 'freeze',
                 id: target.id,
                 creator: playerId
             });
         } else {
             target.parentNode.removeChild(target);
-            gunDB.get('events').put({ 
-                type: 'shatter', 
+            gunDB.get('events').put({
+                type: 'shatter',
                 id: target.id,
                 creator: playerId
             });
         }
-        
+
         // Apply quantum debt penalty
         updateQuantumDebt(-5);
     }
@@ -174,7 +222,7 @@ function createObject(x, y, z) {
     entity.classList.add('quantum-object');
     entity.id = `obj_${playerId}_${Date.now()}`;
     scene.appendChild(entity);
-    
+
     // Sync to network
     gunDB.get('objects').put({
         id: entity.id,
@@ -187,7 +235,7 @@ function createObject(x, y, z) {
 
 function createRemoteObject(data) {
     if (document.getElementById(data.id)) return; // Prevent duplicates
-    
+
     const entity = document.createElement('a-entity');
     entity.setAttribute('position', `${data.position.x} ${data.position.y} ${data.position.z}`);
     entity.setAttribute('glitch-material', '');
@@ -200,7 +248,7 @@ function createRemoteObject(data) {
 function initDebtSystem() {
     let debt = parseInt(localStorage.getItem('quantumDebt') || 100);
     debtDisplay.textContent = `${debt}%`;
-    
+
     // Continuous debt drain for Collapsers
     setInterval(() => {
         if (playerRole === 1) {
@@ -212,12 +260,12 @@ function initDebtSystem() {
 function updateQuantumDebt(change) {
     let debt = parseInt(localStorage.getItem('quantumDebt') || 100);
     debt = Math.max(0, Math.min(100, debt + change));
-    
+
     localStorage.setItem('quantumDebt', debt);
     debtDisplay.textContent = `${debt}%`;
-    
+
     // Visual effect - reduce opacity as debt increases
-    scene.setAttribute('material', 'opacity', debt/100);
+    scene.setAttribute('material', 'opacity', debt / 100);
 }
 
 // PROPHECY SYSTEM
@@ -228,7 +276,7 @@ function initProphecySystem() {
         "Plant fire in frozen gardens",
         "Bury light beneath stone giants"
     ];
-    
+
     // Update prophecy every 3 minutes
     setInterval(() => {
         prophecyDisplay.textContent = prophecies[Math.floor(Math.random() * prophecies.length)];
@@ -247,17 +295,17 @@ function getRandomProphecy() {
 
 // GLOBAL EVENTS HANDLER
 function handleGlobalEvent(data) {
-    switch(data.type) {
+    switch (data.type) {
         case 'freeze':
             const obj = document.getElementById(data.id);
             if (obj) obj.setAttribute('material', 'color: #666; metalness: 0.8');
             break;
-            
+
         case 'shatter':
             const target = document.getElementById(data.id);
             if (target) target.parentNode.removeChild(target);
             break;
-            
+
         case 'reality-shatter':
             document.querySelectorAll('.quantum-object').forEach(obj => {
                 obj.setAttribute('animation', 'property: scale; to: 0 0 0; dur: 2000');
@@ -278,7 +326,7 @@ function initRoleControls() {
         }
         lastTap = now;
     });
-    
+
     // Double-click for desktop
     scene.addEventListener('dblclick', switchRole);
 }
@@ -286,11 +334,11 @@ function initRoleControls() {
 function switchRole() {
     playerRole = playerRole === 0 ? 1 : 0;
     roleDisplay.textContent = playerRole === 0 ? 'DREAMER' : 'COLLAPSER';
-    
+
     // Reinitialize controls
     if (playerRole === 0) initDreamerControls();
     else initCollapserControls();
-    
+
     // Show notification
     const notification = document.createElement('a-text');
     notification.setAttribute('value', `ROLE CHANGED TO ${roleDisplay.textContent}`);
