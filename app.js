@@ -1,5 +1,5 @@
-// ==================== QUANTUM REALITY - MOBILE FIX ==================== //
-// Version 2.1 | Fixes Chrome/Edge black screen and camera issues
+// ==================== QUANTUM REALITY - UNIVERSAL FIX ==================== //
+// Version 3.0 | Works on mobile (Chrome/Edge) and desktop browsers
 
 // --------------------- GLOBAL STATE --------------------- //
 let playerRole = 0; // 0 = Dreamer, 1 = Collapser
@@ -8,10 +8,13 @@ let gunDB;
 let arSessionActive = false;
 const creationCooldown = 2000;
 let lastCreationTime = 0;
+let isDesktopMode = false;
 
 // DOM References
 const arPermission = document.getElementById('ar-permission');
 const startARButton = document.getElementById('start-ar');
+const desktopOverlay = document.getElementById('desktop-overlay');
+const startDesktopButton = document.getElementById('start-desktop');
 const warningDisplay = document.getElementById('support-warning');
 const loadingText = document.getElementById('loading-text');
 const hud = document.getElementById('hud');
@@ -22,71 +25,75 @@ const scene = document.querySelector('a-scene');
 const dynamicContent = document.getElementById('dynamic-content');
 
 // Device Detection
-const isChrome = /Chrome/.test(navigator.userAgent);
-const isEdge = /Edg/.test(navigator.userAgent);
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // --------------------- INITIALIZATION --------------------- //
-document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize AR system
-    initARSystem();
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize UI listeners
+    startARButton.addEventListener('click', startARSession);
+    startDesktopButton.addEventListener('click', startDesktopSession);
     
-    // Initialize game systems when scene loads
-    scene.addEventListener('loaded', initGameSystems);
+    // Auto-show desktop mode on non-mobile
+    if (!isMobile) {
+        desktopOverlay.style.display = 'block';
+    }
 });
 
-// --------------------- AR SYSTEM (FIXED FOR CHROME/EDGE) --------------------- //
-function initARSystem() {
-    startARButton.addEventListener('click', startARSession);
-}
-
-function startARSession() {
+// --------------------- AR SESSION --------------------- //
+async function startARSession() {
     arPermission.classList.add('hidden');
-    loadingText.setAttribute('value', 'Initializing reality interface...');
+    loadingText.setAttribute('value', 'Initializing quantum interface...');
     
-    // Chrome/Edge need explicit camera activation
-    if (isChrome || isEdge) {
-        activateMobileCamera();
-    } else {
-        // For other browsers
+    try {
+        // Start camera
+        await window.restartCamera();
+        
+        // Activate AR
         scene.setAttribute('arjs', 'sourceType: webcam;');
-        setTimeout(() => {
-            arSessionActive = true;
-            hud.classList.remove('hidden');
-            initGameSystems();
-        }, 2000);
+        arSessionActive = true;
+        hud.classList.remove('hidden');
+        
+        // Initialize game systems
+        initGameSystems();
+        
+    } catch (error) {
+        console.error("AR startup failed:", error);
+        warningDisplay.innerHTML = `
+            AR Error: ${error.message}<br>
+            <button onclick="window.restartCamera()">Retry Camera</button>
+            <button onclick="startDesktopSession()">Switch to Desktop Mode</button>
+        `;
+        arPermission.classList.remove('hidden');
     }
 }
 
-function activateMobileCamera() {
-    // Create temporary video element to trigger camera
-    const tempVideo = document.createElement('video');
-    tempVideo.setAttribute('autoplay', '');
-    tempVideo.setAttribute('playsinline', '');
-    tempVideo.style.display = 'none';
-    document.body.appendChild(tempVideo);
+// --------------------- DESKTOP SESSION --------------------- //
+function startDesktopSession() {
+    desktopOverlay.style.display = 'none';
+    arPermission.classList.add('hidden');
+    isDesktopMode = true;
     
-    // Get camera stream
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-            tempVideo.srcObject = stream;
-            
-            // Apply to A-Frame
-            scene.setAttribute('arjs', 'sourceType: webcam; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720;');
-            
-            // Delay for camera initialization
-            setTimeout(() => {
-                arSessionActive = true;
-                hud.classList.remove('hidden');
-                loadingText.setAttribute('visible', 'false');
-                initGameSystems();
-            }, 1500);
-        })
-        .catch(error => {
-            console.error("Camera error:", error);
-            showWarning(`Camera Error: ${error.message}`);
-            arPermission.classList.remove('hidden');
-        });
+    // Configure scene for desktop
+    scene.setAttribute('arjs', 'debugUIEnabled: false;');
+    scene.setAttribute('background', 'color: #000000');
+    scene.setAttribute('camera', 'position: 0 0 5');
+    
+    // Create desktop environment
+    const floor = document.createElement('a-plane');
+    floor.setAttribute('position', '0 -1 0');
+    floor.setAttribute('rotation', '-90 0 0');
+    floor.setAttribute('width', '10');
+    floor.setAttribute('height', '10');
+    floor.setAttribute('color', '#333333');
+    dynamicContent.appendChild(floor);
+    
+    // Add desktop camera controls
+    const camera = document.querySelector('a-camera');
+    camera.setAttribute('look-controls', 'pointerLockEnabled: true');
+    camera.setAttribute('wasd-controls', 'enabled: true');
+    
+    hud.classList.remove('hidden');
+    initGameSystems();
 }
 
 // --------------------- GAME SYSTEMS --------------------- //
@@ -168,30 +175,40 @@ function initProphecySystem() {
     prophecyDisplay.textContent = prophecy;
     
     // Create AR text entity
-    const prophecyText = document.createElement('a-text');
-    prophecyText.setAttribute('value', prophecy);
-    prophecyText.setAttribute('position', '0 0.5 -2');
-    prophecyText.setAttribute('color', '#FF00FF');
-    prophecyText.setAttribute('align', 'center');
-    dynamicContent.appendChild(prophecyText);
-    
-    // Remove after delay
-    setTimeout(() => {
-        dynamicContent.removeChild(prophecyText);
-    }, 10000);
+    if (!isDesktopMode) {
+        const prophecyText = document.createElement('a-text');
+        prophecyText.setAttribute('value', prophecy);
+        prophecyText.setAttribute('position', '0 0.5 -2');
+        prophecyText.setAttribute('color', '#FF00FF');
+        prophecyText.setAttribute('align', 'center');
+        dynamicContent.appendChild(prophecyText);
+        
+        setTimeout(() => {
+            if (prophecyText.parentNode) {
+                dynamicContent.removeChild(prophecyText);
+            }
+        }, 10000);
+    }
 }
 
 // --------------------- ROLE CONTROLS --------------------- //
 function initRoleControls() {
-    // Double-tap to switch roles
-    scene.addEventListener('touchstart', (event) => {
-        if (event.touches.length > 1) return; // Ignore multi-touch
-        
-        const now = Date.now();
-        if (now - lastCreationTime < 300) {
-            switchRole();
-        }
-        lastCreationTime = now;
+    // Double-tap to switch roles (mobile)
+    if (isMobile) {
+        scene.addEventListener('touchstart', (event) => {
+            if (event.touches.length > 1) return;
+            const now = Date.now();
+            if (now - lastCreationTime < 300) switchRole();
+            lastCreationTime = now;
+        });
+    }
+    
+    // Double-click for desktop
+    scene.addEventListener('dblclick', switchRole);
+    
+    // Keyboard shortcut (R key)
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'r') switchRole();
     });
 }
 
@@ -211,16 +228,32 @@ function switchRole() {
     else initCollapserControls();
     
     setTimeout(() => {
-        dynamicContent.removeChild(notification);
+        if (notification.parentNode) {
+            dynamicContent.removeChild(notification);
+        }
     }, 3000);
 }
 
 // --------------------- DREAMER CONTROLS --------------------- //
 function initDreamerControls() {
-    if (window.DeviceOrientationEvent) {
-        window.addEventListener('deviceorientation', handleDeviceTilt);
-    } else {
-        showWarning("Motion controls not available");
+    // Mobile controls
+    if (isMobile && !isDesktopMode) {
+        if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', handleDeviceTilt);
+        } else {
+            showWarning("Motion controls not available");
+        }
+    } 
+    // Desktop controls
+    else {
+        scene.addEventListener('click', (event) => {
+            if (playerRole !== 0 || !arSessionActive) return;
+            if (Date.now() - lastCreationTime < creationCooldown) return;
+            
+            const pos = event.detail.intersection.point;
+            createObject(pos.x, pos.y, pos.z);
+            lastCreationTime = Date.now();
+        });
     }
 }
 
@@ -228,7 +261,6 @@ function handleDeviceTilt(event) {
     if (playerRole !== 0 || !arSessionActive) return;
     if (Date.now() - lastCreationTime < creationCooldown) return;
     
-    // Simplified position calculation
     const x = (event.gamma / 60).toFixed(2);
     const y = (event.beta / 120).toFixed(2);
     
@@ -242,7 +274,7 @@ function initCollapserControls() {
 }
 
 function handleObjectInteraction(event) {
-    if (playerRole !== 1 || !arSessionActive) return;
+    if (playerRole !== 1) return;
     
     const target = event.detail.intersection.object;
     if (target.classList.contains('quantum-object')) {
@@ -250,16 +282,22 @@ function handleObjectInteraction(event) {
         
         if (action === 'freeze') {
             target.setAttribute('material', 'color: #666');
-            gunDB.get('events').put({ 
-                type: 'freeze', 
-                id: target.id
-            });
+            if (gunDB) {
+                gunDB.get('events').put({ 
+                    type: 'freeze', 
+                    id: target.id
+                });
+            }
         } else {
-            target.parentNode.removeChild(target);
-            gunDB.get('events').put({ 
-                type: 'shatter', 
-                id: target.id
-            });
+            if (target.parentNode) {
+                target.parentNode.removeChild(target);
+            }
+            if (gunDB) {
+                gunDB.get('events').put({ 
+                    type: 'shatter', 
+                    id: target.id
+                });
+            }
         }
         
         updateQuantumDebt(-5);
@@ -279,13 +317,15 @@ function createObject(x, y, z) {
     dynamicContent.appendChild(entity);
     
     // Sync to network
-    gunDB.get('objects').put({
-        id: entity.id,
-        type: 'dream',
-        position: { x, y, z },
-        creator: playerId,
-        timestamp: Date.now()
-    });
+    if (gunDB) {
+        gunDB.get('objects').put({
+            id: entity.id,
+            type: 'dream',
+            position: { x, y, z },
+            creator: playerId,
+            timestamp: Date.now()
+        });
+    }
 }
 
 function createRemoteObject(data) {
@@ -321,7 +361,7 @@ function handleGlobalEvent(data) {
             
         case 'shatter':
             const shatteredObj = document.getElementById(data.id);
-            if (shatteredObj) {
+            if (shatteredObj && shatteredObj.parentNode) {
                 shatteredObj.parentNode.removeChild(shatteredObj);
             }
             break;
@@ -330,14 +370,18 @@ function handleGlobalEvent(data) {
 
 // --------------------- UTILITIES --------------------- //
 function showWarning(message) {
-    warningDisplay.textContent = message;
-    warningDisplay.style.display = 'block';
+    if (warningDisplay) {
+        warningDisplay.textContent = message;
+        warningDisplay.style.display = 'block';
+    }
 }
 
 // --------------------- ERROR HANDLING --------------------- //
 window.addEventListener('error', (event) => {
     console.error("Game error:", event.error);
-    prophecyDisplay.textContent = "REALITY INSTABILITY DETECTED";
+    if (prophecyDisplay) {
+        prophecyDisplay.textContent = "REALITY INSTABILITY DETECTED";
+    }
 });
 
 // ==================== END ==================== //
